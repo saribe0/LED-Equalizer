@@ -1,3 +1,13 @@
+#One dimensional LED equalizer using a Raspberry Pi and GPIO pins
+#
+#Author: Samuel Beaulieu
+#Last Updated: 6/27/2015
+#Licensed Under: The MIT License, see the LICENSE file for more
+#
+#Code from here: https://learn.adafruit.com/raspberry-pi-spectrum-analyzer-display-on-rgb-led-strip/page-1
+#   leveraged for fourier transform and frequency analysis.
+
+
 import RPi.GPIO as GPIO
 import alsaaudio as aa
 import numpy as np
