@@ -2,79 +2,125 @@ import RPi.GPIO as GPIO
 import alsaaudio as aa
 import numpy as np
 
-NUM_LEDS = 4
-PIN_ORDER = []
-sample = 2048
-rate = 44100
-min_frequency = 20
-max_frequency = 20000
+PIN_ORDER = [19, 18, 16, 15, 13, 12, 11, 10, 8, 7, 5, 3]
+NUM_LEDS = len(PIN_ORDER)
+SAMPLE = 2048
+RATE = 44100
+MIN_FREQUENCY = 20
+MAX_FREQUENCY = 16000
 
 def initializeGPIO():
     #Initialize GPIO settings
+    GPIO.setwarnings(FALSE)
     GPIO.setmode(GPIO.BOARD)
-
-    #GPIO dedicated pins are 7,11,12,13,15,16,22
-    #GPIO optional pins are 3,5,8,10,19,21,23,24,26
-
     for pins in PIN_ORDER:
         GPIO.setup(pins, GPIO.OUT)
 
-def get_levels(raw, rate, limits):
-    #Create Numpy array
-    data_string = raw[1]
-    data = []
-    for char in data_string:
-        data.append[float(char)]  #CHANGE T                              O REFLECT TUPLE CORRECTLY
+def closeGPIO():
+    #Turns off all LEDs to end program
+    for pins in PIN_ORDER:
+           GPIO.output(pins, 0)
 
-    #Apply hanning window
+def get_levels(raw, limits):
+    #Convert raw data to integers and filter the signal
+    data = np.fromstring(raw, dtype='int16')
     window = np.hanning(len(data))
-    data = data *window
+    data = data*window
 
-    #Apply FFT for real data
+    #Convert the signal to the frequency domain using numpy's
+    #   discrete, real, fast fourier transform
     fourier = np.fft.rfft(data)
-
-    #Make the same size as sample
     fourier.np.delete(fourier, len(fourier)-1)
 
-    #Make power array
+    #Calculate the power distribution and average power
     power = np.abs(fourier)**2
-    index = []
-    for i in range(0,NUM_LEDS):
-        index.append(int(sample*limits[i]/rate))
-    index.append(len(power))
-   
-    #Create LED boolean array
-    leds = []
-    avg = np.average(power)
-    for i in range(0,NUM_LEDS):
-        if(np.average(power[index[i]:index[i+1]]) > avg):
-            leds[i] = 1
-        else:
-            leds[i] = 0
+    avg_power = np.average(power)
 
+    #Set LED multiplier based on power of signal.
+    #   These numbers were experimentally decided and
+    #   are for the headphone jack of an iPhone 5S
+    #   with the signal split. If in doubt, set mult=1.
+    #More work should be done to calculate this numbers to
+    #   reflect other devices or direct input (not split)
+    #The multiplier makes it so a softer sound will have
+    #   less LEDs on, while a louder sound will have more.
+    #   the logarithmic nature of loudness can be seen in
+    #   the chosen multiplier threshholds.
+    mult = 1.3
+    if(avg_power > 999999999*10):
+        mult = 1.2
+    if(avg_power > 999999999*80):
+        mult = 1.1
+    if(avg_power > 999999999*800):
+        mult = 1
+    if(avg_power > 999999999*10000):
+        mult = 0.9
+    leds = []
+
+    #If the signal is loud enough, turn on some LEDs
+    if(avg_power > 999999999*5):
+        #Calculate frequency limit indices for the power array
+        index = []
+        for i in range(0,NUM_LEDS):
+            index.append(int(SAMPLE*limits[i]/RATE))
+        index.append(len(power))
+   
+        #Calculate the average power of each frequency range
+        led_power = []
+        for i in range(0, NUM_LEDS):
+            led_power.append(np.log10(np.sum(power[index[i]:index[i+1]])))
+
+        #Get the maximum average power of a frequency range for
+        #   it to be On. It is based on the average of all the
+        #   frequency range averages and the total average power.
+        max = np.average(led_power)*mult
+
+        #Set LEDs with a frequency range with a large enough average
+        #   power to On and the others to Off
+        for i in range(0, NUM_LEDS):
+            if(led_power[i] > max):
+                leds.append(1)
+            else:
+                leds.append(0)
+    #If the signal is not loud enough, set each LED to off
+    else:
+        for i in range(0, NUM_LEDS):
+            leds.append(0)
+
+    #Return the array with the LEDs states (On or Off)
     return leds
 
-def main():b
+def main():
+    #Initialize GPIO settings
     initializeGPIO()
 
-    #Initialize ALSA audio settings
+    #Initialize ALSA audio input
     input = aa.PCM(aa.PCM_CAPTURE, aa.PCM_NORMAL, 'default')
-    input.setperiodsize(sample)
+    input.setperiodsize(SAMPLE)
 
-    #Initialize frequency intervals
-    multiplier = 10**np.log10(max_frequency / min_frequency) / NUM_LEDS
-    frequency_limits = [20]
+    #Initialize frequency limits
+    multiplier = (MAX_FREQUENCY/MIN_FREQUENCY)**(1.0/NUM_LEDS)
+    frequency_limits = [MIN_FREQUENCY]
     for i in range(0, NUM_LEDS):
         frequency_limits.append(frequency_limits[i]*multiplier)
 
+    #Until broken by keyboard interrupt or power loss, process incoming
+    #   sound and adjust LEDs
     try:
         while True:
-            #Read audio from microphone
-            raw = input.read()
-            levels = get_levels(raw, rate, frequency_limits)
+            #Get audio input
+            l, raw = input.read()
 
-            #Adjust LEDS
-            for i in leds:
+            #Get array of LED states
+            levels = get_levels(raw, frequency_limits)
+
+            #Set LEDs to On or Off
+            for i in range(0, NUM_LEDS):
                 GPIO.output(PIN_ORDER[i], levels[i])
     except KeyboardInterrupt:
         pass
+
+    #If broken by keyboard interrupt, turn of LEDs before ending program
+    closeGPIO()
+
+if __name__ == "__main__": main()
