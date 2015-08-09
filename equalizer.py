@@ -4,15 +4,16 @@
 #Last Updated: 6/27/2015
 #Licensed Under: The MIT License, see the LICENSE file for more
 #
-#Code from here: https://learn.adafruit.com/raspberry-pi-spectrum-analyzer-display-on-rgb-led-strip/page-1
-#   leveraged for fourier transform and frequency analysis.
+#Leveraged code from here: https://learn.adafruit.com/raspberry-pi-spectrum-analyzer-display-on-rgb-led-strip/page-1 for fourier transform and frequency analysis.
 
 
 import RPi.GPIO as GPIO
 import alsaaudio as aa
 import numpy as np
+from time import sleep
 
 PIN_ORDER = [19, 18, 16, 15, 13, 12, 11, 10, 8, 7, 5, 3]
+INPUT_PINS = [] #First is ON/OFF, second is lighting
 NUM_LEDS = len(PIN_ORDER)
 SAMPLE = 2048
 RATE = 44100
@@ -25,13 +26,25 @@ def initializeGPIO():
     GPIO.setmode(GPIO.BOARD)
     for pins in PIN_ORDER:
         GPIO.setup(pins, GPIO.OUT)
+    for pins in INPUT_PINS:
+        GPIO.setup(pins, GPIO.IN)
 
 def closeGPIO():
     #Turns off all LEDs to end program
     for pins in PIN_ORDER:
            GPIO.output(pins, 0)
-
+           
 def get_levels(raw, limits):
+    #Modify settings for alternative lighting
+    #   If alternative lighting option is chosen, 
+    #   edit number of LEDS
+    if (GPIO.input(INPUT_PINS[1]) == 1):
+        if (NUM_LEDS%2 == 1):
+            NUM_LEDS //= 2
+            NUM_LEDS+= 1
+        else:
+            NUM_LEDS //= 2   
+
     #Convert raw data to integers and filter the signal
     data = np.fromstring(raw, dtype='int16')
     window = np.hanning(len(data))
@@ -92,6 +105,7 @@ def get_levels(raw, limits):
                 leds.append(1)
             else:
                 leds.append(0)
+
     #If the signal is not loud enough, set each LED to off
     else:
         for i in range(0, NUM_LEDS):
@@ -118,15 +132,26 @@ def main():
     #   sound and adjust LEDs
     try:
         while True:
-            #Get audio input
-            l, raw = input.read()
+            #Check status of ON/OFF input pin
+            if (GPIO.input(INPUT_PINS[0]) == 1):
+                #Get audio input
+                l, raw = input.read()
 
-            #Get array of LED states
-            levels = get_levels(raw, frequency_limits)
+                #Get array of LED states
+                levels = get_levels(raw, frequency_limits)
 
-            #Set LEDs to On or Off
-            for i in range(0, NUM_LEDS):
-                GPIO.output(PIN_ORDER[i], levels[i])
+                #Set LEDs to On or Off based on lighting option chosen
+                if (GPIO.input(INPUT_PINS[1]) == 0):
+                    for i in range(0, NUM_LEDS):
+                        GPIO.output(PIN_ORDER[i], levels[i])
+                else:
+                    for i in range(0, NUM_LEDS):
+                        GPIO.output(PIN_ORDER[i], levels[i])
+                    for i in range(0, reversed(NUM_LEDS)):
+                        GPIO.output(PIN_ORDER[i], levels[i])
+            else:
+                #Pause for half a second then check status again
+                sleep(0.25)
     except KeyboardInterrupt:
         pass
 
