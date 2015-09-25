@@ -12,8 +12,8 @@ import alsaaudio as aa
 import numpy as np
 from time import sleep
 
-PIN_ORDER = [19, 18, 16, 15, 13, 12, 11, 10, 8, 7, 5, 3]
-INPUT_PINS = [] #First is ON/OFF, second is lighting
+PIN_ORDER = [23, 22, 21, 19, 18, 16, 15, 13, 12, 11, 10, 8, 7, 5, 3]
+INPUT_PINS = [26, 24] #First is ON/OFF, second is lighting
 NUM_LEDS = len(PIN_ORDER)
 SAMPLE = 2048
 RATE = 44100
@@ -35,16 +35,6 @@ def closeGPIO():
            GPIO.output(pins, 0)
            
 def get_levels(raw, limits):
-    #Modify settings for alternative lighting
-    #   If alternative lighting option is chosen, 
-    #   edit number of LEDS
-    if (GPIO.input(INPUT_PINS[1]) == 1):
-        if (NUM_LEDS%2 == 1):
-            NUM_LEDS //= 2
-            NUM_LEDS+= 1
-        else:
-            NUM_LEDS //= 2   
-
     #Convert raw data to integers and filter the signal
     data = np.fromstring(raw, dtype='int16')
     window = np.hanning(len(data))
@@ -115,6 +105,8 @@ def get_levels(raw, limits):
     return leds
 
 def main():
+    global NUM_LEDS
+
     #Initialize GPIO settings
     initializeGPIO()
 
@@ -134,6 +126,17 @@ def main():
         while True:
             #Check status of ON/OFF input pin
             if (GPIO.input(INPUT_PINS[0]) == 1):
+
+                #Modify settings for alternative lighting
+                #   If alternative lighting option is chosen, 
+                #   edit number of LEDS
+                if (GPIO.input(INPUT_PINS[1]) == 1):
+                    NUM_LEDS //= 2
+                    if (NUM_LEDS%2 == 1):
+                         NUM_LEDS+= 1
+                else:
+                    NUM_LEDS = len(PIN_ORDER)
+
                 #Get audio input
                 l, raw = input.read()
 
@@ -147,7 +150,8 @@ def main():
                 else:
                     for i in range(0, NUM_LEDS):
                         GPIO.output(PIN_ORDER[i], levels[i])
-                    for i in range(0, reversed(NUM_LEDS)):
+                    rev_NUM_LEDS = list(reversed(NUM_LEDS))
+                    for i in range(0, rev_NUM_LEDS):
                         GPIO.output(PIN_ORDER[i], levels[i])
             else:
                 #Pause for half a second then check status again
