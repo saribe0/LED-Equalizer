@@ -13,12 +13,13 @@ import numpy as np
 from time import sleep
 
 PIN_ORDER = [23, 22, 21, 19, 18, 16, 15, 13, 12, 11, 10, 8, 7, 5, 3]
-INPUT_PINS = [26, 24] #First is ON/OFF, second is lighting
-NUM_LEDS = len(PIN_ORDER)
-SAMPLE = 2048
-RATE = 44100
-MIN_FREQUENCY = 20
-MAX_FREQUENCY = 16000
+INPUT_PINS = [26, 24]        #First is ON/OFF, second is lighting
+NUM_LEDS = len(PIN_ORDER)    #Number of LEDs in light pattern
+SAMPLE = 2048                #Sample size
+RATE = 44100                 #Sample rate
+MIN_FREQUENCY = 20           #Lowest frequency for lowest LED
+MAX_FREQUENCY = 16000        #Upper frequency for highest LED
+CURRENT_STATE = 0            #0 for standard, 1 for alternate
 
 def initializeGPIO():
     #Initialize GPIO settings
@@ -33,6 +34,14 @@ def closeGPIO():
     #Turns off all LEDs to end program
     for pins in PIN_ORDER:
            GPIO.output(pins, 0)
+
+def calculate_frequency_limits():
+    #Calculate the frequency limits
+    multiplier = (MAX_FREQUENCY/MIN_FREQUENCY)**(1.0/NUM_LEDS)
+    frequency_limits = [MIN_FREQUENCY]
+    for i in range(0, NUM_LEDS):
+        frequency_limits.append(frequency_limits[i]*multiplier)
+    return frequency_limits
            
 def get_levels(raw, limits):
     #Convert raw data to integers and filter the signal
@@ -115,10 +124,7 @@ def main():
     input.setperiodsize(SAMPLE)
 
     #Initialize frequency limits
-    multiplier = (MAX_FREQUENCY/MIN_FREQUENCY)**(1.0/NUM_LEDS)
-    frequency_limits = [MIN_FREQUENCY]
-    for i in range(0, NUM_LEDS):
-        frequency_limits.append(frequency_limits[i]*multiplier)
+    frequency_limits = calculate_frequency_limits()
 
     #Until broken by keyboard interrupt or power loss, process incoming
     #   sound and adjust LEDs
@@ -127,15 +133,21 @@ def main():
             #Check status of ON/OFF input pin
             if (GPIO.input(INPUT_PINS[0]) == 1):
 
-                #Modify settings for alternative lighting
-                #   If alternative lighting option is chosen, 
-                #   edit number of LEDS
-                if (GPIO.input(INPUT_PINS[1]) == 1):
+                #Check if mode has changed to alternate mode. If it has, update NUM_LEDS,
+                #   recalculate frequency limits and update the state.
+                if ((GPIO.input(INPUT_PINS[1]) == 1) and (CURRENT_STATE == 0)):
                     NUM_LEDS //= 2
                     if (NUM_LEDS%2 == 1):
                          NUM_LEDS+= 1
-                else:
+                    calculate_frequency_limits()
+                    CURRENT_STATE = 1
+
+                #Check if mode has changed to standard mode. If it has, update NUM_LEDS,
+                #   recalculate frequency limits and update the state.
+                if((GPIO.input(INPUT_PINS[1]) == 0) and (CURRENT_STATE == 1)):
                     NUM_LEDS = len(PIN_ORDER)
+                    calculate_frequency_limits()
+                    CURRENT_STATE = 0
 
                 #Get audio input
                 l, raw = input.read()
